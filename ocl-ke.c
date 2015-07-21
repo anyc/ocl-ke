@@ -172,16 +172,23 @@ void main_compile_kernel() {
 	free(program_source);
 
 	/* Get number and size of binaries */
-	clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(bin_sizes), bin_sizes, &bin_sizes_ret);
+	err = clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(bin_sizes), bin_sizes, &bin_sizes_ret);
+	if (err != CL_SUCCESS)
+		fatal("clGetProgramInfo CL_PROGRAM_BINARY_SIZES failed: %d", err);
+	
+	assert(bin_sizes_ret == sizeof(size_t));
 	assert(bin_sizes[0] > 0);
 
 	/* Dump binary into file */
 	memset(bin_bits, 0, sizeof(bin_bits));
-	bin_bits[device_id] = malloc(bin_sizes[0]);
-	clGetProgramInfo(program, CL_PROGRAM_BINARIES, sizeof(void*), &bin_bits[device_id], NULL);
+	bin_bits[0] = malloc(bin_sizes[0]);
+	err = clGetProgramInfo(program, CL_PROGRAM_BINARIES, sizeof(char*), bin_bits, &bin_sizes_ret);
+	if (err != CL_SUCCESS)
+		fatal("clGetProgramInfo CL_PROGRAM_BINARIES failed: %d", err);
+	assert(bin_sizes_ret == sizeof(char*));
 	
-	write_to_file(bin_file_name, bin_bits[device_id], bin_sizes[0]);
-	free(bin_bits[device_id]);
+	write_to_file(bin_file_name, bin_bits[0], bin_sizes[0]);
+	free(bin_bits[0]);
 	
 	printf("%s: kernel binary created\n", bin_file_name);
 }
@@ -364,6 +371,12 @@ int main(int argc, char **argv)
 	/* List available devices */
 	if (action_list_devices)
 		main_list_devices(stdout);
+	
+	/* release context with all devices and recreate with selected device */
+	clReleaseContext(context);
+	context = clCreateContext(cprops, 1, &device, 0, 0, &err);
+	if (err != CL_SUCCESS)
+		fatal("creating device context failed");
 	
 	/* Compile list of kernels */
 	if (kernel_file_name)

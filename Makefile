@@ -14,4 +14,4 @@ debug: LDFLAGS += -g
 debug: $(APP)
 
 clean:
-	rm -f $(APP)
+	rm -f $(APP) $(APP).o
