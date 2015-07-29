@@ -40,12 +40,13 @@ static char *syntax =
 	"every application run.\n"
 	"\n"
 	"Options:\n"
-	"\t-L            Print list of available platforms\n"
-	"\t-l            Print list of available devices\n"
-	"\t-e            Print list of supported platform extensions\n"
-	"\t-a            Activate CL_CONTEXT_OFFLINE_DEVICES_AMD extension\n"
-	"\t-p <plat_idx> Index of the desired platform (default: 0)\n"
-	"\t-d <dev_idx>  Index of the desired device (default: 0)\n"
+	"\t-L              Print list of available platforms\n"
+	"\t-l              Print list of available devices\n"
+	"\t-e              Print list of supported platform extensions\n"
+	"\t-a              Activate CL_CONTEXT_OFFLINE_DEVICES_AMD extension\n"
+	"\t-p <plat_idx>   Index of the desired platform (default: 0)\n"
+	"\t-d <dev_idx>    Index of the desired device (default: 0)\n"
+	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	;
 
 char *kernel_file_name = NULL;  /* Kernel source file */
@@ -59,6 +60,7 @@ int num_devices = 0;
 int device_id = -1;
 cl_device_id devices[MAX_DEVICES];
 cl_device_id device;
+char *build_options = 0;
 
 void fatal(char *format, ...) {
 	va_list args;
@@ -163,11 +165,12 @@ void main_compile_kernel() {
 		fatal("clCreateProgramWithSource failed");
 
 	/* Compile source */
-	err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
+	err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
 	if (err != CL_SUCCESS) {
 		char buf[0x10000];
 		clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
-		fprintf(stderr, "\n%s\n", buf);
+		fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
+		fprintf(stderr, "Compiler message: %s\n", buf);
 		fatal("compilation failed");
 	}
 	free(program_source);
@@ -220,7 +223,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Process options */
-	while ((opt = getopt(argc, argv, "lLeap:d:")) != -1) {
+	while ((opt = getopt(argc, argv, "lLeap:d:b:")) != -1) {
 		switch (opt) {
 		case 'l':
 			action_list_devices = 1;
@@ -239,6 +242,9 @@ int main(int argc, char **argv)
 			break;
 		case 'd':
 			device_str = optarg;
+			break;
+		case 'b':
+			build_options = optarg;
 			break;
 		default:
 			fprintf(stderr, syntax, argv[0], argv[0]);
