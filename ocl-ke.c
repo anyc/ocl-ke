@@ -42,6 +42,7 @@ static char *syntax =
 	"Options:\n"
 	"\t-L            Print list of available platforms\n"
 	"\t-l            Print list of available devices\n"
+	"\t-e            Print list of supported platform extensions\n"
 	"\t-a            Activate CL_CONTEXT_OFFLINE_DEVICES_AMD extension\n"
 	"\t-p <plat_idx> Index of the desired platform (default: 0)\n"
 	"\t-d <dev_idx>  Index of the desired device (default: 0)\n"
@@ -203,6 +204,7 @@ int main(int argc, char **argv)
 	long platform_id;
 	int action_list_devices = 0;  /* Dump list of devices */
 	int action_list_platforms = 0;  /* Dump list of platforms */
+	int action_list_plat_exts = 0;
 	int use_amd_extension = 0;
 	
 	cl_int err;
@@ -218,7 +220,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Process options */
-	while ((opt = getopt(argc, argv, "lLap:d:")) != -1) {
+	while ((opt = getopt(argc, argv, "lLeap:d:")) != -1) {
 		switch (opt) {
 		case 'l':
 			action_list_devices = 1;
@@ -229,6 +231,9 @@ int main(int argc, char **argv)
 		case 'a':
 			use_amd_extension = 1;
 			break;
+		case 'e':
+			action_list_plat_exts = 1;
+			break;
 		case 'p':
 			platform_str = optarg;
 			break;
@@ -236,14 +241,14 @@ int main(int argc, char **argv)
 			device_str = optarg;
 			break;
 		default:
-			fprintf(stderr, syntax, argv[0]);
+			fprintf(stderr, syntax, argv[0], argv[0]);
 			return 1;
 		}
 	}
 
 	/* The only remaining argument should be the kernel to compile */
 	if (argc - optind > 1) {
-		fprintf(stderr, syntax, argv[0]);
+		fprintf(stderr, syntax, argv[0], argv[0]);
 		return 1;
 	} else if (argc - optind == 1)
 		kernel_file_name = argv[optind];
@@ -319,6 +324,14 @@ int main(int argc, char **argv)
 	
 	printf("\nPlatform %ld selected: %s\n", platform_id, platform_names[platform_id]);
 	
+	if (action_list_plat_exts) {
+		char exts[MAX_STRING_SIZE];
+		err = clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, MAX_STRING_SIZE, exts, 0);
+		if (err != CL_SUCCESS)
+			fatal("error while querying platform info");
+		
+		printf("Extensions: %s\n", exts);
+	}
 	
 	/* create context */
 	cl_context_properties cprops[5];
