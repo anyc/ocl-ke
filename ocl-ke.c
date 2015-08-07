@@ -52,6 +52,58 @@ static char *syntax =
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	;
 
+char * ocl_err2str(cl_int err) {
+	switch (err) {
+		case CL_SUCCESS:                            return "Success";
+		case CL_DEVICE_NOT_FOUND:                   return "Device not found";
+		case CL_DEVICE_NOT_AVAILABLE:               return "Device not available";
+		case CL_COMPILER_NOT_AVAILABLE:             return "Compiler not available";
+		case CL_MEM_OBJECT_ALLOCATION_FAILURE:      return "Memory object allocation failure";
+		case CL_OUT_OF_RESOURCES:                   return "Out of resources";
+		case CL_OUT_OF_HOST_MEMORY:                 return "Out of host memory";
+		case CL_PROFILING_INFO_NOT_AVAILABLE:       return "Profiling information not available";
+		case CL_MEM_COPY_OVERLAP:                   return "Memory copy overlap";
+		case CL_IMAGE_FORMAT_MISMATCH:              return "Image format mismatch";
+		case CL_IMAGE_FORMAT_NOT_SUPPORTED:         return "Image format not supported";
+		case CL_BUILD_PROGRAM_FAILURE:              return "Program build failure";
+		case CL_MAP_FAILURE:                        return "Map failure";
+		case CL_INVALID_VALUE:                      return "Invalid value";
+		case CL_INVALID_DEVICE_TYPE:                return "Invalid device type";
+		case CL_INVALID_PLATFORM:                   return "Invalid platform";
+		case CL_INVALID_DEVICE:                     return "Invalid device";
+		case CL_INVALID_CONTEXT:                    return "Invalid context";
+		case CL_INVALID_QUEUE_PROPERTIES:           return "Invalid queue properties";
+		case CL_INVALID_COMMAND_QUEUE:              return "Invalid command queue";
+		case CL_INVALID_HOST_PTR:                   return "Invalid host pointer";
+		case CL_INVALID_MEM_OBJECT:                 return "Invalid memory object";
+		case CL_INVALID_IMAGE_FORMAT_DESCRIPTOR:    return "Invalid image format descriptor";
+		case CL_INVALID_IMAGE_SIZE:                 return "Invalid image size";
+		case CL_INVALID_SAMPLER:                    return "Invalid sampler";
+		case CL_INVALID_BINARY:                     return "Invalid binary";
+		case CL_INVALID_BUILD_OPTIONS:              return "Invalid build options";
+		case CL_INVALID_PROGRAM:                    return "Invalid program";
+		case CL_INVALID_PROGRAM_EXECUTABLE:         return "Invalid program executable";
+		case CL_INVALID_KERNEL_NAME:                return "Invalid kernel name";
+		case CL_INVALID_KERNEL_DEFINITION:          return "Invalid kernel definition";
+		case CL_INVALID_KERNEL:                     return "Invalid kernel";
+		case CL_INVALID_ARG_INDEX:                  return "Invalid argument index";
+		case CL_INVALID_ARG_VALUE:                  return "Invalid argument value";
+		case CL_INVALID_ARG_SIZE:                   return "Invalid argument size";
+		case CL_INVALID_KERNEL_ARGS:                return "Invalid kernel arguments";
+		case CL_INVALID_WORK_DIMENSION:             return "Invalid work dimension";
+		case CL_INVALID_WORK_GROUP_SIZE:            return "Invalid work group size";
+		case CL_INVALID_WORK_ITEM_SIZE:             return "Invalid work item size";
+		case CL_INVALID_GLOBAL_OFFSET:              return "Invalid global offset";
+		case CL_INVALID_EVENT_WAIT_LIST:            return "Invalid event wait list";
+		case CL_INVALID_EVENT:                      return "Invalid event";
+		case CL_INVALID_OPERATION:                  return "Invalid operation";
+		case CL_INVALID_GL_OBJECT:                  return "Invalid OpenGL object";
+		case CL_INVALID_BUFFER_SIZE:                return "Invalid buffer size";
+		case CL_INVALID_MIP_LEVEL:                  return "Invalid mip-map level";
+		default: return "Unknown error";
+	}
+}
+
 void fatal(char *format, ...) {
 	va_list args;
 	
@@ -60,6 +112,20 @@ void fatal(char *format, ...) {
 	printf("fatal error: ");
 	vprintf(format, args);
 	printf("\n");
+	
+	va_end(args);
+	
+	exit(1);
+}
+
+void ocl_fatal(cl_int error, char *format, ...) {
+	va_list args;
+	
+	va_start(args, format);
+	
+	printf("fatal OCL error: ");
+	vprintf(format, args);
+	printf(": %s\n", ocl_err2str(error));
 	
 	va_end(args);
 	
@@ -177,7 +243,7 @@ int main(int argc, char **argv)
 	/* get platforms */
 	err = clGetPlatformIDs(0, 0, &n_platforms);
 	if (err != CL_SUCCESS)
-		fatal("cannot get OpenCL platform");
+		ocl_fatal(err, "cannot get OpenCL platform");
 	
 	if (n_platforms < 1) {
 		printf("no OpenCL platform found\n");
@@ -189,7 +255,7 @@ int main(int argc, char **argv)
 	
 	err = clGetPlatformIDs(n_platforms, platforms, NULL);
 	if (err != CL_SUCCESS)
-		fatal("cannot get OpenCL platform");
+		ocl_fatal(err, "cannot get OpenCL platform");
 	
 	
 	/* determine platform index */
@@ -217,23 +283,23 @@ int main(int argc, char **argv)
 	for (i=0;i<n_platforms;i++) {
 		err = clGetPlatformInfo(platforms[i], CL_PLATFORM_NAME, 0, 0, &size);
 		if (err != CL_SUCCESS)
-			fatal("error while querying platform info");
+			ocl_fatal(err, "error while querying platform info");
 		
 		platform_names[i] = (char*) malloc(sizeof(char)*size);
 		
 		err = clGetPlatformInfo(platforms[i], CL_PLATFORM_NAME, size, platform_names[i], 0);
 		if (err != CL_SUCCESS)
-			fatal("error while querying platform info");
+			ocl_fatal(err, "error while querying platform info");
 		
 		if (action_list_platforms) {
 			char vendor[MAX_STRING_SIZE], version[MAX_STRING_SIZE];
 			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VENDOR, MAX_STRING_SIZE, vendor, 0);
 			if (err != CL_SUCCESS)
-				fatal("error while querying platform info");
+				ocl_fatal(err, "error while querying platform info");
 			
 			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VERSION, MAX_STRING_SIZE, vendor, 0);
 			if (err != CL_SUCCESS)
-				fatal("error while querying platform info");
+				ocl_fatal(err, "error while querying platform info");
 			
 			printf(" %2d    %s, %s (%s)\n", i, platform_names[i], vendor, version);
 		}
@@ -250,7 +316,7 @@ int main(int argc, char **argv)
 		char exts[MAX_STRING_SIZE];
 		err = clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, MAX_STRING_SIZE, exts, 0);
 		if (err != CL_SUCCESS)
-			fatal("error while querying platform info");
+			ocl_fatal(err, "error while querying platform info");
 		
 		printf("Extensions: %s\n", exts);
 	}
@@ -273,15 +339,15 @@ int main(int argc, char **argv)
 	cprops[i] = (cl_context_properties) NULL;
 	context = clCreateContextFromType(cprops, CL_DEVICE_TYPE_ALL, NULL, NULL, &err);
 	if (err != CL_SUCCESS)
-		fatal("cannot create context");
+		ocl_fatal(err, "cannot create context");
 	
 	/* Get device list from context */
 	err = clGetContextInfo(context, CL_CONTEXT_NUM_DEVICES, sizeof(num_devices), &num_devices, NULL);
 	if (err != CL_SUCCESS)
-		fatal("cannot get number of devices");
+		ocl_fatal(err, "cannot get number of devices");
 	err = clGetContextInfo(context, CL_CONTEXT_DEVICES, sizeof(devices), devices, NULL);
 	if (err != CL_SUCCESS)
-		fatal("cannot get list of devices");
+		ocl_fatal(err, "cannot get list of devices");
 	
 	/* Get selected device */
 	if (device_str) {
@@ -325,7 +391,7 @@ int main(int argc, char **argv)
 	clReleaseContext(context);
 	context = clCreateContext(cprops, 1, &device, 0, 0, &err);
 	if (err != CL_SUCCESS)
-		fatal("creating device context failed");
+		ocl_fatal(err, "creating device context failed");
 	
 	/* Compile list of kernels */
 	if (kernel_file_name) {
@@ -367,7 +433,7 @@ int main(int argc, char **argv)
 		cl_program program;
 		program = clCreateProgramWithSource(context, 1, (const char **) &program_source, &program_source_size, &err);
 		if (err != CL_SUCCESS)
-			fatal("clCreateProgramWithSource failed");
+			ocl_fatal(err, "clCreateProgramWithSource failed");
 
 		/* Compile source */
 		err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
@@ -376,14 +442,14 @@ int main(int argc, char **argv)
 			clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
 			fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
 			fprintf(stderr, "Compiler message: %s\n", buf);
-			fatal("compilation failed");
+			ocl_fatal(err, "compilation failed");
 		}
 		free(program_source);
 
 		/* Get number and size of binaries */
 		err = clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(bin_sizes), bin_sizes, &bin_sizes_ret);
 		if (err != CL_SUCCESS)
-			fatal("clGetProgramInfo CL_PROGRAM_BINARY_SIZES failed: %d", err);
+			ocl_fatal(err, "clGetProgramInfo CL_PROGRAM_BINARY_SIZES failed: %d", err);
 		
 		assert(bin_sizes_ret == sizeof(size_t));
 		assert(bin_sizes[0] > 0);
@@ -393,7 +459,7 @@ int main(int argc, char **argv)
 		bin_bits[0] = malloc(bin_sizes[0]);
 		err = clGetProgramInfo(program, CL_PROGRAM_BINARIES, sizeof(char*), bin_bits, &bin_sizes_ret);
 		if (err != CL_SUCCESS)
-			fatal("clGetProgramInfo CL_PROGRAM_BINARIES failed: %d", err);
+			ocl_fatal(err, "clGetProgramInfo CL_PROGRAM_BINARIES failed: %d", err);
 		assert(bin_sizes_ret == sizeof(char*));
 		
 		write_to_file(bin_file_name, bin_bits[0], bin_sizes[0]);
