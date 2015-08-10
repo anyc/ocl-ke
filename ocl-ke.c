@@ -26,6 +26,32 @@
 #include <unistd.h>
 #include <assert.h>
 
+#ifdef OCL_AUTODETECT
+#include <dlfcn.h>
+#endif
+
+
+cl_int (*l_clCompileProgram)(cl_program program,
+					cl_uint num_devices,
+					const cl_device_id *device_list,
+					const char *options,
+					cl_uint num_input_headers,
+					const cl_program *input_headers,
+					const char **header_include_names,
+					void (CL_CALLBACK *pfn_notify)( cl_program program, void *user_data),
+					void *user_data) = 0;
+
+cl_program (*l_clLinkProgram)(cl_context context,
+					cl_uint num_devices,
+					const cl_device_id *device_list,
+					const char *options,
+					cl_uint num_input_programs,
+					const cl_program *input_programs,
+					void (CL_CALLBACK *pfn_notify) (cl_program program, void *user_data),
+					void *user_data,
+					cl_int *errcode_ret) = 0;
+
+unsigned char opencl_api_version = 10;
 
 #define MAX_STRING_SIZE  200
 #define MAX_DEVICES  100
@@ -37,7 +63,7 @@
 static char *syntax =
 	"Syntax: %s [<options>] <kernel.cl>\n"
 	"\n"
-	"%s uses the OpenCL API to compile kernels for the selected device\n"
+	"%s uses the OpenCL API to compile a kernel for the selected device\n"
 	"and stores the resulting binary code in a file. Afterwards, applications\n"
 	"can use clCreateProgramWithBinary instead of compiling the kernel during\n"
 	"every application run.\n"
@@ -193,7 +219,17 @@ int main(int argc, char **argv)
 	cl_device_id devices[MAX_DEVICES];
 	cl_device_id device;
 	char *build_options = 0;
+	char *link_options = 0;
 
+	#ifdef OCL_AUTODETECT
+	l_clCompileProgram = dlsym(0, "clCompileProgram");
+	l_clLinkProgram = dlsym(0, "clLinkProgram");
+	if (l_clCompileProgram && l_clLinkProgram) {
+		opencl_api_version = 12;
+		printf("Detected OpenCL 1.2 capable library\n");
+	}
+	#endif
+	
 	/* No arguments */
 	if (argc == 1) {
 		fprintf(stderr, syntax, argv[0], argv[0]);
@@ -414,7 +450,6 @@ int main(int argc, char **argv)
 		
 		/* Message */
 		printf("Device %d selected: %s\n", device_id, device_name);
-		printf("Compiling '%s'...\n", kernel_file_name);
 		
 		/* Get kernel prefix */
 		extlen = strlen(kernel_file_ext);
@@ -435,16 +470,44 @@ int main(int argc, char **argv)
 		if (err != CL_SUCCESS)
 			ocl_fatal(err, "clCreateProgramWithSource failed");
 
-		/* Compile source */
-		err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
-		if (err != CL_SUCCESS) {
-			char buf[0x10000];
-			clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
-			fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
-			fprintf(stderr, "Compiler message: %s\n", buf);
-			ocl_fatal(err, "compilation failed");
-		}
-		free(program_source);
+		if (opencl_api_version < 12) {
+			printf("Building '%s'...\n", kernel_file_name);
+			
+			err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
+			if (err != CL_SUCCESS) {
+				char buf[0x10000];
+				clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
+				fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
+				fprintf(stderr, "Compiler message: %s\n", buf);
+				ocl_fatal(err, "compilation failed");
+			}
+			free(program_source);
+		} else
+		if (opencl_api_version == 12) {
+			cl_uint num_input_headers = 0;
+			cl_program *input_headers = 0;
+			const char **header_include_names = 0;
+			
+			printf("Compiling '%s'...\n", kernel_file_name);
+			
+			err = l_clCompileProgram(program, 1, &device, build_options, num_input_headers, input_headers, header_include_names, 0, 0);
+			if (err != CL_SUCCESS) {
+				char buf[0x10000];
+				clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
+				fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
+				fprintf(stderr, "Compiler message: %s\n", buf);
+				ocl_fatal(err, "compilation failed");
+			}
+			
+// 			printf("Linking '%s'...\n", kernel_file_name);
+// 			
+// 			program = l_clLinkProgram(context, 1, &device, link_options, 1, &program, 0, 0, &err);
+// 			if (err != CL_SUCCESS)
+// 				ocl_fatal(err, "clLinkProgram failed");
+			
+			free(program_source);
+		} else
+			fatal("failed to detect OpenCL API version");
 
 		/* Get number and size of binaries */
 		err = clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(bin_sizes), bin_sizes, &bin_sizes_ret);
