@@ -227,11 +227,12 @@ int main(int argc, char **argv)
 	unsigned int n_includes = 0;
 
 	#ifdef OCL_AUTODETECT
+	/* check if the linked OpenCL runtime supports v1.2 API */
 	l_clCompileProgram = dlsym(0, "clCompileProgram");
 	l_clLinkProgram = dlsym(0, "clLinkProgram");
 	if (l_clCompileProgram && l_clLinkProgram) {
 		opencl_api_version = 12;
-		printf("Detected OpenCL 1.2 capable library\n");
+		printf("Linked OpenCL runtime seems to support v1.2 API\n");
 	}
 	#endif
 	
@@ -269,9 +270,6 @@ int main(int argc, char **argv)
 			filename = optarg;
 			break;
 		case 'i':
-			if (opencl_api_version < 12)
-				printf("Warning: -i is only available with OpenCL 1.2\n");
-			
 			includes = (char**) realloc(includes, sizeof(char*)*(n_includes+1));
 			includes[n_includes] = optarg;
 			n_includes++;
@@ -350,7 +348,7 @@ int main(int argc, char **argv)
 			if (err != CL_SUCCESS)
 				ocl_fatal(err, "error while querying platform info");
 			
-			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VERSION, MAX_STRING_SIZE, vendor, 0);
+			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VERSION, MAX_STRING_SIZE, version, 0);
 			if (err != CL_SUCCESS)
 				ocl_fatal(err, "error while querying platform info");
 			
@@ -373,6 +371,20 @@ int main(int argc, char **argv)
 		
 		printf("Extensions: %s\n", exts);
 	}
+	
+	/* query OpenCL version of chosen platform */
+	char version[MAX_STRING_SIZE];
+	err = clGetPlatformInfo(platform, CL_PLATFORM_VERSION, MAX_STRING_SIZE, version, 0);
+	if (err != CL_SUCCESS)
+		ocl_fatal(err, "error while querying platform version");
+	
+	float cl_version;
+	if (sscanf(version, "OpenCL %f", &cl_version) != 1)
+		fatal("cannot parse platform version string");
+	
+	printf("Platform supports OpenCL v%.1f\n", cl_version);
+	opencl_api_version = cl_version * 10;
+	
 	
 	/* create context */
 	cl_context_properties cprops[5];
@@ -491,6 +503,12 @@ int main(int argc, char **argv)
 			ocl_fatal(err, "clCreateProgramWithSource failed");
 
 		if (opencl_api_version < 12) {
+			if (n_includes > 0) {
+				printf("\nOpenCL < v1.2 does not support compiled include (header) files.\n");
+				printf("Please use -b to specify the include path for the header source,\n");
+				printf("e.g., %s -b \"-I/path/to/header.h.cl\"\n\n", argv[0]);
+			}
+			
 			printf("Building '%s'...\n", kernel_file_name);
 			
 			err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
@@ -516,7 +534,8 @@ int main(int argc, char **argv)
 					printf("Loading '%s'...\n", includes[i]);
 					
 					src = read_file(includes[i], &size);
-					input_headers[i] = clCreateProgramWithSource(context, 1, (const char **) &src, &size, &err);
+// 					input_headers[i] = clCreateProgramWithSource(context, 1, (const char **) &src, &size, &err);
+					input_headers[i] = clCreateProgramWithBinary(context, 1, &device, &size, (const unsigned char **) &src, 0, &err);
 					if (err != CL_SUCCESS)
 						ocl_fatal(err, "clCreateProgramWithSource failed");
 					free(src);
