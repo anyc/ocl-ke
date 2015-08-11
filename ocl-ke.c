@@ -76,6 +76,7 @@ static char *syntax =
 	"\t-p <plat_idx>   Index of the desired platform (default: 0)\n"
 	"\t-d <dev_idx>    Index of the desired device (default: 0)\n"
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
+	"\t-o <filename>   Write kernel into file instead of ${kernel}.bin>\n"
 	;
 
 char * ocl_err2str(cl_int err) {
@@ -195,6 +196,7 @@ int main(int argc, char **argv)
 	unsigned int i;
 	char *device_str = NULL;
 	char *platform_str = NULL;
+	char *filename = NULL;
 	size_t size;
 	long platform_id;
 	int action_list_devices = 0;  /* Dump list of devices */
@@ -237,7 +239,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Process options */
-	while ((opt = getopt(argc, argv, "lLeap:d:b:")) != -1) {
+	while ((opt = getopt(argc, argv, "lLeap:d:b:o:")) != -1) {
 		switch (opt) {
 		case 'l':
 			action_list_devices = 1;
@@ -259,6 +261,9 @@ int main(int argc, char **argv)
 			break;
 		case 'b':
 			build_options = optarg;
+			break;
+		case 'o':
+			filename = optarg;
 			break;
 		default:
 			fprintf(stderr, syntax, argv[0], argv[0]);
@@ -451,13 +456,17 @@ int main(int argc, char **argv)
 		/* Message */
 		printf("Device %d selected: %s\n", device_id, device_name);
 		
-		/* Get kernel prefix */
-		extlen = strlen(kernel_file_ext);
-		strncpy(kernel_file_prefix, kernel_file_name, MAX_STRING_SIZE);
-		len = strlen(kernel_file_name);
-		if (len > extlen && !strcmp(&kernel_file_name[len - extlen], kernel_file_ext))
-			kernel_file_prefix[len - extlen] = 0;
-		snprintf(bin_file_name, MAX_STRING_SIZE, "%s.bin", kernel_file_prefix);
+		if (!filename) {
+			/* Get kernel prefix */
+			extlen = strlen(kernel_file_ext);
+			strncpy(kernel_file_prefix, kernel_file_name, MAX_STRING_SIZE);
+			len = strlen(kernel_file_name);
+			if (len > extlen && !strcmp(&kernel_file_name[len - extlen], kernel_file_ext))
+				kernel_file_prefix[len - extlen] = 0;
+			snprintf(bin_file_name, MAX_STRING_SIZE, "%s.bin", kernel_file_prefix);
+		} else {
+			strncpy(bin_file_name, filename, MAX_STRING_SIZE);
+		}
 		
 		/* Read the program source */
 		program_source = read_file(kernel_file_name, &program_source_size);

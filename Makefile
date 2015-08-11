@@ -9,7 +9,7 @@ CFLAGS+=-DOCL_AUTODETECT
 
 .PHONY: clean
 
-all: $(APP) test check
+all: $(APP)
 
 $(APP): $(APP).o
 
@@ -25,4 +25,4 @@ test:
 	$(MAKE) -C tests/
 
 check:
-	$(MAKE) -C tests/ run
+	$(MAKE) -C tests/ check

@@ -4,13 +4,16 @@
 #include <string.h>
 #include <CL/cl.h>
 
+#define STRINGIFY(s) str(s)
+#define str(s) #s
+
 unsigned char * read_file(char *name, size_t *size) {
 	FILE *f;
 	char *result;
 	
 	f = fopen(name, "r");
 	if (!f) {
-		printf("cannot open file \"%s\"", name);
+		printf("cannot open file \"%s\"\n", name);
 		exit(1);
 	}
 	
@@ -68,7 +71,11 @@ int main(int argc, char *argv[]) {
 	
 	queue = clCreateCommandQueue(context, device, 0, &err);
 	
+	#ifndef KERNEL_FILE
 	bin = read_file("increment_kernel.bin", &size);
+	#else
+	bin = read_file(STRINGIFY(KERNEL_FILE), &size);
+	#endif
 	
 	program = clCreateProgramWithBinary(context, 1, &device, &size, &bin, 0, &err);
 	if (clBuildProgram(program, 1, &device, "", NULL, NULL) != CL_SUCCESS) {
@@ -84,7 +91,11 @@ int main(int argc, char *argv[]) {
 	clEnqueueWriteBuffer(queue, buf_a, CL_TRUE, 0, sizeof(int)*length, a, 0, NULL, NULL);
 	clEnqueueWriteBuffer(queue, buf_b, CL_TRUE, 0, sizeof(int)*length, b, 0, NULL, NULL);
 	
+	#ifndef KERNEL_NAME
 	kernel = clCreateKernel(program, "increment", &err);
+	#else
+	kernel = clCreateKernel(program, STRINGIFY(KERNEL_NAME), &err);
+	#endif
 	
 	err = 0;
 	err  = clSetKernelArg(kernel, 0, sizeof(cl_mem), &buf_a);
