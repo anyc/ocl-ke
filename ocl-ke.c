@@ -76,7 +76,8 @@ static char *syntax =
 	"\t-p <plat_idx>   Index of the desired platform (default: 0)\n"
 	"\t-d <dev_idx>    Index of the desired device (default: 0)\n"
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
-	"\t-o <filename>   Write kernel into file instead of ${kernel}.bin>\n"
+	"\t-i <include>    Include this binary (header) in resulting binary (OpenCL 1.2 only)\n"
+	"\t-o <filename>   Write kernel into file instead of ${kernel}.bin\n"
 	;
 
 char * ocl_err2str(cl_int err) {
@@ -222,6 +223,8 @@ int main(int argc, char **argv)
 	cl_device_id device;
 	char *build_options = 0;
 	char *link_options = 0;
+	char **includes = 0;
+	unsigned int n_includes = 0;
 
 	#ifdef OCL_AUTODETECT
 	l_clCompileProgram = dlsym(0, "clCompileProgram");
@@ -239,7 +242,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Process options */
-	while ((opt = getopt(argc, argv, "lLeap:d:b:o:")) != -1) {
+	while ((opt = getopt(argc, argv, "lLeap:d:b:o:i:")) != -1) {
 		switch (opt) {
 		case 'l':
 			action_list_devices = 1;
@@ -264,6 +267,15 @@ int main(int argc, char **argv)
 			break;
 		case 'o':
 			filename = optarg;
+			break;
+		case 'i':
+			if (opencl_api_version < 12)
+				printf("Warning: -i is only available with OpenCL 1.2\n");
+			
+			includes = (char**) realloc(includes, sizeof(char*)*(n_includes+1));
+			includes[n_includes] = optarg;
+			n_includes++;
+			
 			break;
 		default:
 			fprintf(stderr, syntax, argv[0], argv[0]);
@@ -394,7 +406,6 @@ int main(int argc, char **argv)
 	if (device_str) {
 		char *endptr;
 		char name[MAX_STRING_SIZE];
-		int i;
 
 		/* Try to interpret 'device_str' as a number */
 		device_id = strtol(device_str, &endptr, 10);
@@ -493,13 +504,28 @@ int main(int argc, char **argv)
 			free(program_source);
 		} else
 		if (opencl_api_version == 12) {
+			char *src;
+			size_t size;
 			cl_uint num_input_headers = 0;
 			cl_program *input_headers = 0;
-			const char **header_include_names = 0;
+			
+			if (n_includes > 0) {
+				input_headers = (cl_program*) malloc(sizeof(cl_program)*n_includes);
+				
+				for (i=0;i<n_includes;i++) {
+					printf("Loading '%s'...\n", includes[i]);
+					
+					src = read_file(includes[i], &size);
+					input_headers[i] = clCreateProgramWithSource(context, 1, (const char **) &src, &size, &err);
+					if (err != CL_SUCCESS)
+						ocl_fatal(err, "clCreateProgramWithSource failed");
+					free(src);
+				}
+			}
 			
 			printf("Compiling '%s'...\n", kernel_file_name);
 			
-			err = l_clCompileProgram(program, 1, &device, build_options, num_input_headers, input_headers, header_include_names, 0, 0);
+			err = l_clCompileProgram(program, 1, &device, build_options, n_includes, input_headers,(const char**) includes, 0, 0);
 			if (err != CL_SUCCESS) {
 				char buf[0x10000];
 				clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
@@ -510,6 +536,7 @@ int main(int argc, char **argv)
 			
 // 			printf("Linking '%s'...\n", kernel_file_name);
 // 			
+// 			link_options = "-create-library";
 // 			program = l_clLinkProgram(context, 1, &device, link_options, 1, &program, 0, 0, &err);
 // 			if (err != CL_SUCCESS)
 // 				ocl_fatal(err, "clLinkProgram failed");
@@ -537,7 +564,7 @@ int main(int argc, char **argv)
 		write_to_file(bin_file_name, bin_bits[0], bin_sizes[0]);
 		free(bin_bits[0]);
 		
-		printf("%s: kernel binary created\n", bin_file_name);
+		printf("Successfully created kernel binary '%s'\n", bin_file_name);
 	}
 	
 	/* End program */

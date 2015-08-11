@@ -78,6 +78,7 @@ int main(int argc, char *argv[]) {
 	#endif
 	
 	program = clCreateProgramWithBinary(context, 1, &device, &size, &bin, 0, &err);
+	
 	if (clBuildProgram(program, 1, &device, "", NULL, NULL) != CL_SUCCESS) {
 		char buffer[10240];
 		clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, NULL);
