@@ -1,6 +1,7 @@
 
 APP=ocl-ke
 
+CFLAGS+=-Wall
 LDLIBS+=-lOpenCL
 
 ### enable dynamic OpenCL v1.2 detection

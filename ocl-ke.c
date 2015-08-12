@@ -53,8 +53,7 @@ cl_program (*l_clLinkProgram)(cl_context context,
 
 unsigned char opencl_api_version = 10;
 
-#define MAX_STRING_SIZE  200
-#define MAX_DEVICES  100
+#define INFO_STR_SIZE 128
 
 #ifndef CL_CONTEXT_OFFLINE_DEVICES_AMD
 #define CL_CONTEXT_OFFLINE_DEVICES_AMD 0x403f
@@ -70,7 +69,7 @@ static char *syntax =
 	"\n"
 	"Options:\n"
 	"\t-L              Print list of available platforms\n"
-	"\t-l              Print list of available devices\n"
+	"\t-l              Print list of available devices for selected platform\n"
 	"\t-e              Print list of supported platform extensions\n"
 	"\t-a              Activate CL_CONTEXT_OFFLINE_DEVICES_AMD extension\n"
 	"\t-p <plat_idx>   Index of the desired platform (default: 0)\n"
@@ -191,11 +190,36 @@ void write_to_file(char *name, char *buf, size_t buf_len) {
 	fclose(f);
 }
 
+void show_build_log(cl_program program, unsigned int n_devices, cl_device_id *devices, cl_int err) {
+	int i;
+	
+	for (i=0;i<n_devices;i++) {
+		cl_build_status bstatus;
+		
+		clGetProgramBuildInfo(program, devices[i], CL_PROGRAM_BUILD_STATUS, sizeof(bstatus), &bstatus, NULL);
+		
+		if (bstatus != CL_BUILD_SUCCESS) {
+			char *buf;
+			size_t logsize;
+			
+			clGetProgramBuildInfo(program, devices[i], CL_PROGRAM_BUILD_LOG, 0, 0, &logsize);
+			
+			buf = (char*) malloc(logsize);
+			
+			clGetProgramBuildInfo(program, devices[i], CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
+// 			fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
+			fprintf(stderr, "Compiler message: %s\n", buf);
+			ocl_fatal(err, "compilation failed");
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int opt;
 	unsigned int i;
-	char *device_str = NULL;
+	char **device_strings = NULL;
+	unsigned int n_device_strings = 0;
 	char *platform_str = NULL;
 	char *filename = NULL;
 	size_t size;
@@ -211,16 +235,14 @@ int main(int argc, char **argv)
 	char **platform_names;
 	
 	char *kernel_file_name = NULL;  /* Kernel source file */
-	char kernel_file_prefix[MAX_STRING_SIZE];  /* Prefix used for output files */
-	char bin_file_name[MAX_STRING_SIZE];  /* Name of binary */
 
 	cl_platform_id platform;
 	cl_context context;
 
-	int num_devices = 0;
-	int device_id = -1;
-	cl_device_id devices[MAX_DEVICES];
-	cl_device_id device;
+	unsigned int n_all_devices = 0;
+	cl_device_id *all_devices;
+	cl_device_id *devices;
+	unsigned int n_devices;
 	char *build_options = 0;
 	char *link_options = 0;
 	char **includes = 0;
@@ -261,7 +283,11 @@ int main(int argc, char **argv)
 			platform_str = optarg;
 			break;
 		case 'd':
-			device_str = optarg;
+			device_strings = (char**) realloc(device_strings, sizeof(char*)*(n_device_strings+1));
+			device_strings[n_device_strings] = malloc(strlen(optarg)+1);
+			strcpy(device_strings[n_device_strings], optarg);
+			n_device_strings++;
+			
 			break;
 		case 'b':
 			build_options = optarg;
@@ -271,7 +297,8 @@ int main(int argc, char **argv)
 			break;
 		case 'i':
 			includes = (char**) realloc(includes, sizeof(char*)*(n_includes+1));
-			includes[n_includes] = optarg;
+			includes[n_includes] = malloc(strlen(optarg)+1);
+			strcpy(includes[n_includes], optarg);
 			n_includes++;
 			
 			break;
@@ -315,14 +342,14 @@ int main(int argc, char **argv)
 		char *endptr;
 		platform_id = strtol(platform_str, &endptr, 10);
 		if (!*endptr) {
-			if (platform_id >= n_platforms)
+			if (platform_id > n_platforms || platform_id < 1)
 				fatal("%d is not a valid platform ID; use '-L' option for a list of valid IDs", platform_id);
 		} else
 			fatal("cannot parse %s\n", platform_str);
 	} else
-		platform_id = 0;
+		platform_id = 1;
 	
-	platform = platforms[platform_id];
+	platform = platforms[platform_id-1];
 	
 	if (action_list_platforms) {
 		printf("\n ID    Name, Vendor (Version)\n");
@@ -343,16 +370,16 @@ int main(int argc, char **argv)
 			ocl_fatal(err, "error while querying platform info");
 		
 		if (action_list_platforms) {
-			char vendor[MAX_STRING_SIZE], version[MAX_STRING_SIZE];
-			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VENDOR, MAX_STRING_SIZE, vendor, 0);
+			char vendor[INFO_STR_SIZE], version[INFO_STR_SIZE];
+			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VENDOR, INFO_STR_SIZE, vendor, 0);
 			if (err != CL_SUCCESS)
 				ocl_fatal(err, "error while querying platform info");
 			
-			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VERSION, MAX_STRING_SIZE, version, 0);
+			err = clGetPlatformInfo(platforms[i], CL_PLATFORM_VERSION, INFO_STR_SIZE, version, 0);
 			if (err != CL_SUCCESS)
 				ocl_fatal(err, "error while querying platform info");
 			
-			printf(" %2d    %s, %s (%s)\n", i, platform_names[i], vendor, version);
+			printf(" %2d    %s, %s (%s)\n", i+1, platform_names[i], vendor, version);
 		}
 	}
 	
@@ -361,11 +388,11 @@ int main(int argc, char **argv)
 		printf("\t%d platforms available\n\n", n_platforms);
 	}
 	
-	printf("\nPlatform %ld selected: %s\n", platform_id, platform_names[platform_id]);
+	printf("\nPlatform %ld selected: %s\n", platform_id, platform_names[platform_id-1]);
 	
 	if (action_list_plat_exts) {
-		char exts[MAX_STRING_SIZE];
-		err = clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, MAX_STRING_SIZE, exts, 0);
+		char exts[INFO_STR_SIZE];
+		err = clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, INFO_STR_SIZE, exts, 0);
 		if (err != CL_SUCCESS)
 			ocl_fatal(err, "error while querying platform info");
 		
@@ -373,8 +400,8 @@ int main(int argc, char **argv)
 	}
 	
 	/* query OpenCL version of chosen platform */
-	char version[MAX_STRING_SIZE];
-	err = clGetPlatformInfo(platform, CL_PLATFORM_VERSION, MAX_STRING_SIZE, version, 0);
+	char version[INFO_STR_SIZE];
+	err = clGetPlatformInfo(platform, CL_PLATFORM_VERSION, INFO_STR_SIZE, version, 0);
 	if (err != CL_SUCCESS)
 		ocl_fatal(err, "error while querying platform version");
 	
@@ -393,8 +420,8 @@ int main(int argc, char **argv)
 	
 	i=2;
 	
-	char extensions[MAX_STRING_SIZE];
-	clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, MAX_STRING_SIZE, extensions, 0);
+	char extensions[INFO_STR_SIZE];
+	clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, INFO_STR_SIZE, extensions, 0);
 	if (use_amd_extension && strstr(extensions, "cl_amd_offline_devices")) {
 		cprops[i] = CL_CONTEXT_OFFLINE_DEVICES_AMD;
 		i++;
@@ -407,90 +434,102 @@ int main(int argc, char **argv)
 		ocl_fatal(err, "cannot create context");
 	
 	/* Get device list from context */
-	err = clGetContextInfo(context, CL_CONTEXT_NUM_DEVICES, sizeof(num_devices), &num_devices, NULL);
+	err = clGetContextInfo(context, CL_CONTEXT_NUM_DEVICES, sizeof(n_all_devices), &n_all_devices, NULL);
 	if (err != CL_SUCCESS)
 		ocl_fatal(err, "cannot get number of devices");
-	err = clGetContextInfo(context, CL_CONTEXT_DEVICES, sizeof(devices), devices, NULL);
+	
+	all_devices = (cl_device_id*) malloc(sizeof(cl_device_id)*n_all_devices);
+	err = clGetContextInfo(context, CL_CONTEXT_DEVICES, sizeof(cl_device_id)*n_all_devices, all_devices, NULL);
 	if (err != CL_SUCCESS)
 		ocl_fatal(err, "cannot get list of devices");
 	
-	/* Get selected device */
-	if (device_str) {
+	/* Get selected device(s) */
+	if (device_strings) {
 		char *endptr;
-		char name[MAX_STRING_SIZE];
+		long dev_id;
+		int i;
+		
+		devices = (cl_device_id*) malloc(sizeof(cl_device_id)*n_device_strings);
 
-		/* Try to interpret 'device_str' as a number */
-		device_id = strtol(device_str, &endptr, 10);
-		if (!*endptr) {
-			if (device_id >= num_devices)
-				fatal("%d is not a valid device ID; use '-l' option for a list of valid IDs", device_id);
-		} else {
-			fatal("cannot parse %s\n", device_str);
+		n_devices = n_device_strings;
+		for (i=0;i<n_device_strings;i++) {
+			/* Try to interpret 'device_str' as a number */
+			dev_id = strtol(device_strings[i], &endptr, 10);
+			if (!*endptr) {
+				if (dev_id >= n_all_devices || dev_id < 0)
+					fatal("%d is not a valid device ID; use '-l' option for a list of valid IDs", dev_id);
+			} else {
+				fatal("cannot parse device index \"%s\"\n", device_strings[i]);
+			}
+			
+			if (dev_id == 0 && i > 0)
+				fatal("error, \"-d 0\" cannot be combined with other values");
+			
+			if (dev_id == 0) {
+				free(devices);
+				printf("All devices selected\n");
+				devices = all_devices;
+				n_devices = n_all_devices;
+				break;
+			}
+			
+			devices[i] = all_devices[dev_id];
+			
+			
+			/* Get device info */
+			char device_name[INFO_STR_SIZE];
+			clGetDeviceInfo(devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
+			
+			printf("Device %ld selected: %s\n", dev_id+1, device_name);
 		}
 	} else {
-		device_id = 0;
+		devices = (cl_device_id*) malloc(sizeof(cl_device_id));
+		devices[0] = all_devices[0];
+		n_devices = 1;
+		
+		/* Get device info */
+		char device_name[INFO_STR_SIZE];
+		clGetDeviceInfo(devices[0], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
+		
+		printf("Device %d selected: %s\n", 1, device_name);
 	}
-	
-	device = devices[device_id];
 	
 	/* List available devices */
 	if (action_list_devices) {
 		FILE *f = stdout;
 		int i;
-		char name[MAX_STRING_SIZE], vendor[MAX_STRING_SIZE];
+		char name[INFO_STR_SIZE], vendor[INFO_STR_SIZE];
 
 		/* List devices */
 		fprintf(f, "\n ID    Name, Vendor\n");
 		fprintf(f, "----  ----------------------------------------------------\n");
-		for (i = 0; i < num_devices; i++) {
-			clGetDeviceInfo(devices[i], CL_DEVICE_NAME, MAX_STRING_SIZE, name, NULL);
-			clGetDeviceInfo(devices[i], CL_DEVICE_VENDOR, MAX_STRING_SIZE, vendor, NULL);
-			fprintf(f, " %2d    %s %s\n", i, name, vendor);
+		for (i = 0; i < n_all_devices; i++) {
+			clGetDeviceInfo(all_devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, name, NULL);
+			clGetDeviceInfo(all_devices[i], CL_DEVICE_VENDOR, INFO_STR_SIZE, vendor, NULL);
+			fprintf(f, " %2d    %s %s\n", i+1, name, vendor);
 		}
 		fprintf(f, "----------------------------------------------------------\n");
-		fprintf(f, "\t%d devices available\n\n", num_devices);
+		fprintf(f, "\t%d devices available\n\n", n_all_devices);
 	}
 	
 	/* release context with all devices and recreate with selected device */
 	clReleaseContext(context);
-	context = clCreateContext(cprops, 1, &device, 0, 0, &err);
+	context = clCreateContext(cprops, n_devices, devices, 0, 0, &err);
 	if (err != CL_SUCCESS)
 		ocl_fatal(err, "creating device context failed");
 	
 	/* Compile list of kernels */
 	if (kernel_file_name) {
-		char device_name[MAX_STRING_SIZE];
-
-		char *kernel_file_ext = ".cl";
-		int len, extlen;
 		cl_int err;
 
+		char *bin_file_name;
 		char *program_source;
 		size_t program_source_size;
 
-		size_t bin_sizes[MAX_DEVICES];
+		size_t *bin_sizes;
 		size_t bin_sizes_ret;
-		char *bin_bits[MAX_DEVICES];
+		char **bin_bits;
 
-
-		/* Get device info */
-		clGetDeviceInfo(device, CL_DEVICE_NAME, MAX_STRING_SIZE, device_name, NULL);
-		
-		/* Message */
-		printf("Device %d selected: %s\n", device_id, device_name);
-		
-		if (!filename) {
-			/* Get kernel prefix */
-			extlen = strlen(kernel_file_ext);
-			strncpy(kernel_file_prefix, kernel_file_name, MAX_STRING_SIZE);
-			len = strlen(kernel_file_name);
-			if (len > extlen && !strcmp(&kernel_file_name[len - extlen], kernel_file_ext))
-				kernel_file_prefix[len - extlen] = 0;
-			snprintf(bin_file_name, MAX_STRING_SIZE, "%s.bin", kernel_file_prefix);
-		} else {
-			strncpy(bin_file_name, filename, MAX_STRING_SIZE);
-		}
-		
 		/* Read the program source */
 		program_source = read_file(kernel_file_name, &program_source_size);
 		if (!program_source)
@@ -511,20 +550,15 @@ int main(int argc, char **argv)
 			
 			printf("Building '%s'...\n", kernel_file_name);
 			
-			err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
-			if (err != CL_SUCCESS) {
-				char buf[0x10000];
-				clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
-				fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
-				fprintf(stderr, "Compiler message: %s\n", buf);
-				ocl_fatal(err, "compilation failed");
-			}
+			err = clBuildProgram(program, n_devices, devices, build_options, NULL, NULL);
+			if (err != CL_SUCCESS)
+				show_build_log(program, n_devices, devices, err);
+			
 			free(program_source);
 		} else
 		if (opencl_api_version == 12) {
 			char *src;
 			size_t size;
-			cl_uint num_input_headers = 0;
 			cl_program *input_headers = 0;
 			
 			if (n_includes > 0) {
@@ -535,7 +569,7 @@ int main(int argc, char **argv)
 					
 					src = read_file(includes[i], &size);
 // 					input_headers[i] = clCreateProgramWithSource(context, 1, (const char **) &src, &size, &err);
-					input_headers[i] = clCreateProgramWithBinary(context, 1, &device, &size, (const unsigned char **) &src, 0, &err);
+					input_headers[i] = clCreateProgramWithBinary(context, n_devices, devices, &size, (const unsigned char **) &src, 0, &err);
 					if (err != CL_SUCCESS)
 						ocl_fatal(err, "clCreateProgramWithSource failed");
 					free(src);
@@ -544,46 +578,118 @@ int main(int argc, char **argv)
 			
 			printf("Compiling '%s'...\n", kernel_file_name);
 			
-			err = l_clCompileProgram(program, 1, &device, build_options, n_includes, input_headers,(const char**) includes, 0, 0);
-			if (err != CL_SUCCESS) {
-				char buf[0x10000];
-				clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(buf), buf, NULL);
-				fprintf(stderr, "\nCompiler options: \"%s\"\n", build_options);
-				fprintf(stderr, "Compiler message: %s\n", buf);
-				ocl_fatal(err, "compilation failed");
-			}
+			err = l_clCompileProgram(program, n_devices, devices, build_options, n_includes, input_headers,(const char**) includes, 0, 0);
+			if (err != CL_SUCCESS)
+				show_build_log(program, n_devices, devices, err);
 			
-// 			printf("Linking '%s'...\n", kernel_file_name);
-// 			
+			printf("Linking '%s'...\n", kernel_file_name);
+			
 // 			link_options = "-create-library";
-// 			program = l_clLinkProgram(context, 1, &device, link_options, 1, &program, 0, 0, &err);
-// 			if (err != CL_SUCCESS)
-// 				ocl_fatal(err, "clLinkProgram failed");
+			program = l_clLinkProgram(context, n_devices, devices, link_options, 1, &program, 0, 0, &err);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clLinkProgram failed");
 			
 			free(program_source);
 		} else
 			fatal("failed to detect OpenCL API version");
 
 		/* Get number and size of binaries */
-		err = clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(bin_sizes), bin_sizes, &bin_sizes_ret);
+		bin_sizes = (size_t*) malloc(sizeof(size_t)*n_devices);
+		err = clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t)*n_devices, bin_sizes, &bin_sizes_ret);
 		if (err != CL_SUCCESS)
 			ocl_fatal(err, "clGetProgramInfo CL_PROGRAM_BINARY_SIZES failed: %d", err);
 		
-		assert(bin_sizes_ret == sizeof(size_t));
-		assert(bin_sizes[0] > 0);
+		assert(bin_sizes_ret == sizeof(size_t)*n_devices);
+		for (i=0;i<n_devices;i++) {
+			if (bin_sizes[i] == 0)
+				fatal("no binary returned for device %d", i+1);
+		}
 
 		/* Dump binary into file */
-		memset(bin_bits, 0, sizeof(bin_bits));
-		bin_bits[0] = malloc(bin_sizes[0]);
-		err = clGetProgramInfo(program, CL_PROGRAM_BINARIES, sizeof(char*), bin_bits, &bin_sizes_ret);
+		bin_bits = (char**) malloc(sizeof(char*)*n_devices);
+		for (i=0;i<n_devices;i++)
+			bin_bits[i] = malloc(bin_sizes[i]);
+		err = clGetProgramInfo(program, CL_PROGRAM_BINARIES, sizeof(char*)*n_devices, bin_bits, &bin_sizes_ret);
 		if (err != CL_SUCCESS)
 			ocl_fatal(err, "clGetProgramInfo CL_PROGRAM_BINARIES failed: %d", err);
-		assert(bin_sizes_ret == sizeof(char*));
+		assert(bin_sizes_ret == sizeof(char*)*n_devices);
 		
-		write_to_file(bin_file_name, bin_bits[0], bin_sizes[0]);
-		free(bin_bits[0]);
-		
-		printf("Successfully created kernel binary '%s'\n", bin_file_name);
+		if (n_devices == 1) {
+			if (!filename) {
+				char *last;
+				size_t prefix_len;
+				last = strrchr(kernel_file_name, '.');
+				prefix_len = last - kernel_file_name;
+				if (!strcmp(last, ".cl")) {
+					bin_file_name = (char*) malloc(prefix_len+4+1);
+					strncpy(bin_file_name, kernel_file_name, prefix_len);
+					strcpy(bin_file_name + prefix_len, ".bin");
+				} else {
+					bin_file_name = (char*) malloc(strlen(kernel_file_name)+4+1);
+					sprintf(bin_file_name, "%s.bin", kernel_file_name);
+				}
+			} else {
+				bin_file_name = (char*) malloc(strlen(filename)+1);
+				strcpy(bin_file_name, filename);
+			}
+			
+			write_to_file(bin_file_name, bin_bits[0], bin_sizes[0]);
+			free(bin_bits[0]);
+			
+			printf("Successfully created kernel binary '%s'\n", bin_file_name);
+		} else {
+			for (i=0;i<n_devices;i++) {
+				char name[INFO_STR_SIZE];
+				size_t name_len;
+				char *last;
+				size_t prefix_len;
+				int j;
+				
+				clGetDeviceInfo(devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, name, NULL);
+				name_len = strlen(name);
+				
+				for (j=0;j<name_len;j++)
+					if (name[j] == ' ')
+						name[j] = '_';
+				
+// 				if (!filename) {
+// 					char *last;
+// 					size_t prefix_len;
+// 					last = strrchr(kernel_file_name, '.');
+// 					prefix_len = last - kernel_file_name;
+// 					if (!strcmp(last, ".cl")) {
+// 						bin_file_name = (char*) malloc(prefix_len+4+1);
+// 						strncpy(bin_file_name, kernel_file_name, prefix_len);
+// 						strcpy(bin_file_name + prefix_len, ".bin");
+// 					} else {
+// 						bin_file_name = (char*) malloc(strlen(kernel_file_name)+4+1);
+// 						sprintf(bin_file_name, "%s.bin", kernel_file_name);
+// 					}
+// 				} else {
+// 					bin_file_name = (char*) malloc(strlen(filename)+1);
+// 					strcpy(bin_file_name, filename);
+// 				}
+				
+				if (!filename)
+					filename = kernel_file_name;
+				
+				last = strrchr(filename, '.');
+				prefix_len = last - kernel_file_name;
+				
+				bin_file_name = (char*) malloc(prefix_len + 1 + name_len + 4 + 1);
+				strncpy(bin_file_name, filename, prefix_len);
+				bin_file_name[prefix_len] = '_';
+				strcpy(bin_file_name + prefix_len + 1, name);
+				strcpy(bin_file_name + prefix_len + 1 + name_len, ".bin");
+				
+				write_to_file(bin_file_name, bin_bits[i], bin_sizes[i]);
+				
+				printf("Successfully created kernel binary '%s'\n", bin_file_name);
+				
+				free(bin_bits[i]);
+				free(bin_file_name);
+			}
+		}
 	}
 	
 	/* End program */
