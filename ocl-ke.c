@@ -53,7 +53,7 @@ cl_program (*l_clLinkProgram)(cl_context context,
 
 unsigned char opencl_api_version = 10;
 
-#define INFO_STR_SIZE 128
+#define INFO_STR_SIZE 1000
 
 #ifndef CL_CONTEXT_OFFLINE_DEVICES_AMD
 #define CL_CONTEXT_OFFLINE_DEVICES_AMD 0x403f
@@ -62,22 +62,31 @@ unsigned char opencl_api_version = 10;
 static char *syntax =
 	"Syntax: %s [<options>] <kernel.cl>\n"
 	"\n"
-	"%s uses the OpenCL API to compile a kernel for the selected device\n"
+	"%s uses the OpenCL API to compile a kernel for the selected device(s)\n"
 	"and stores the resulting binary code in a file. Afterwards, applications\n"
-	"can use clCreateProgramWithBinary instead of compiling the kernel during\n"
-	"every application run.\n"
+	"can load the kernel with clCreateProgramWithBinary instead of compiling\n"
+	"the kernel during every application run.\n"
 	"\n"
 	"Options:\n"
 	"\t-L              Print list of available platforms\n"
 	"\t-l              Print list of available devices for selected platform\n"
-	"\t-e              Print list of supported platform extensions\n"
-	"\t-a              Activate CL_CONTEXT_OFFLINE_DEVICES_AMD extension\n"
-	"\t-p <plat_idx>   Index of the desired platform (default: 0)\n"
-	"\t-d <dev_idx>    Index of the desired device (default: 0)\n"
+	"\t-e              Print list of supported extensions\n"
+	"\t-a              Activate CL_CONTEXT_OFFLINE_DEVICES_AMD extension, if\n"
+	"\t                available, to choose from the list of all supported\n"
+	"\t                devices by the compiler instead of only the available\n"
+	"\t                devices in the current system.\n"
+	"\t-p <plat_idx>   Index of the desired platform (default: 1)\n"
+	"\t-d <dev_idx>    Index of the desired device (default: 1)\n"
+	"\t                A value of 0 equals all devices on the platform.\n"
+	"\t                This option can be specified multiple times to select\n"
+	"\t                multiple devices but this is not supported by all\n"
+	"\t                available operations. \n"
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	"\t-i <source>     Include this source file (OpenCL 1.2 only)\n"
+	"\t                This option can be specified multiple times.\n"
 	"\t-I <binary>     Include this binary file (OpenCL 1.2 only)\n"
-	"\t-o <filename>   Write kernel into file instead of ${kernel}.bin\n"
+	"\t                This option can be specified multiple times.\n"
+	"\t-o <filename>   Write kernel into this file instead of ${kernel}.bin\n"
 	;
 
 char * ocl_err2str(cl_int err) {
@@ -227,7 +236,7 @@ int main(int argc, char **argv)
 	long platform_id;
 	int action_list_devices = 0;  /* Dump list of devices */
 	int action_list_platforms = 0;  /* Dump list of platforms */
-	int action_list_plat_exts = 0;
+	int action_list_exts = 0;
 	int use_amd_extension = 0;
 	
 	cl_int err;
@@ -280,7 +289,7 @@ int main(int argc, char **argv)
 			use_amd_extension = 1;
 			break;
 		case 'e':
-			action_list_plat_exts = 1;
+			action_list_exts = 1;
 			break;
 		case 'p':
 			platform_str = optarg;
@@ -290,6 +299,14 @@ int main(int argc, char **argv)
 			device_strings[n_device_strings] = malloc(strlen(optarg)+1);
 			strcpy(device_strings[n_device_strings], optarg);
 			n_device_strings++;
+			
+			char *endptr;
+			long id = strtol(optarg, &endptr, 10);
+			if ((!*endptr && id == 0) ||
+				(n_device_strings == 2))
+			{
+				printf("Please note that multiple devices are not supported during all operations\n");
+			}
 			
 			break;
 		case 'b':
@@ -400,7 +417,7 @@ int main(int argc, char **argv)
 	
 	printf("\nPlatform %ld selected: %s\n", platform_id, platform_names[platform_id-1]);
 	
-	if (action_list_plat_exts) {
+	if (action_list_exts) {
 		char exts[INFO_STR_SIZE];
 		err = clGetPlatformInfo(platform, CL_PLATFORM_EXTENSIONS, INFO_STR_SIZE, exts, 0);
 		if (err != CL_SUCCESS)
@@ -489,8 +506,17 @@ int main(int argc, char **argv)
 			/* Get device info */
 			char device_name[INFO_STR_SIZE];
 			clGetDeviceInfo(devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetDeviceInfo failed");
 			
 			printf("Device %ld selected: %s\n", dev_id, device_name);
+			if (action_list_exts) {
+				char exts[INFO_STR_SIZE];
+				clGetDeviceInfo(devices[i], CL_DEVICE_EXTENSIONS, INFO_STR_SIZE, exts, NULL);
+				if (err != CL_SUCCESS)
+					ocl_fatal(err, "clGetDeviceInfo failed");
+				printf("Extensions: %s\n", exts);
+			}
 		}
 	} else {
 		devices = (cl_device_id*) malloc(sizeof(cl_device_id));
@@ -500,8 +526,17 @@ int main(int argc, char **argv)
 		/* Get device info */
 		char device_name[INFO_STR_SIZE];
 		clGetDeviceInfo(devices[0], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
+		if (err != CL_SUCCESS)
+			ocl_fatal(err, "clGetDeviceInfo failed");
 		
 		printf("Device %d selected: %s\n", 1, device_name);
+		if (action_list_exts) {
+			char exts[INFO_STR_SIZE];
+			clGetDeviceInfo(devices[0], CL_DEVICE_EXTENSIONS, INFO_STR_SIZE, exts, NULL);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetDeviceInfo failed");
+			printf("Extensions: %s\n", exts);
+		}
 	}
 	
 	/* List available devices */
