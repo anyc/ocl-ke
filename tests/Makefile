@@ -17,7 +17,7 @@ KERNELS:=$(filter-out %.inc.cl,$(wildcard *.cl))
 
 %.ocl12.bin: %.inc.cl %.h.cl
 	../ocl-ke $*.h.cl -o $*.h.bin
-	../ocl-ke $< -i $*.h.bin -o $@
+	../ocl-ke $< -I $*.h.bin -o $@
 
 %.test: %
 	@echo Running $<...

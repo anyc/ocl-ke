@@ -115,9 +115,17 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 	
-	clFinish(queue);
+	err = clFinish(queue);
+	if (err != CL_SUCCESS) {
+		printf("Error during kernel execution: %d\n", err);
+		exit(1);
+	}
 	
-	clEnqueueReadBuffer(queue, buf_b, CL_TRUE, 0, sizeof(int)*length, b, 0, NULL, NULL);
+	err = clEnqueueReadBuffer(queue, buf_b, CL_TRUE, 0, sizeof(int)*length, b, 0, NULL, NULL);
+	if (err != CL_SUCCESS) {
+		printf("Error during readbuffer: %d\n", err);
+		exit(1);
+	}
 	
 	for (i=0;i<length;i++) {
 		if (b[i] != 1) {
