@@ -84,9 +84,9 @@ static char *syntax =
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	"\t-B <link_opts>  Options passed to the linker\n"
 	"\t-s              Create a kernel library instead of an executable\n"
-	"\t-i <source>     Include this source file (OpenCL 1.2 only)\n"
+	"\t-i <source>     Include this source file (OpenCL 1.2 or higher only)\n"
 	"\t                This option can be specified multiple times.\n"
-	"\t-I <binary>     Include this binary file (OpenCL 1.2 only)\n"
+	"\t-I <binary>     Include this binary file (OpenCL 1.2 or higher only)\n"
 	"\t                This option can be specified multiple times.\n"
 	"\t-o <filename>   Write kernel into this file instead of ${kernel}.bin\n"
 	;
@@ -514,22 +514,6 @@ int main(int argc, char **argv)
 			}
 			
 			devices[i] = all_devices[dev_id-1];
-			
-			
-			/* Get device info */
-			char device_name[INFO_STR_SIZE];
-			clGetDeviceInfo(devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
-			if (err != CL_SUCCESS)
-				ocl_fatal(err, "clGetDeviceInfo failed");
-			
-			printf("Device %ld selected: %s\n", dev_id, device_name);
-			if (action_list_exts) {
-				char exts[INFO_STR_SIZE];
-				clGetDeviceInfo(devices[i], CL_DEVICE_EXTENSIONS, INFO_STR_SIZE, exts, NULL);
-				if (err != CL_SUCCESS)
-					ocl_fatal(err, "clGetDeviceInfo failed");
-				printf("Extensions: %s\n", exts);
-			}
 		}
 	} else {
 		/* no device has been selected, choose first device */
@@ -537,21 +521,44 @@ int main(int argc, char **argv)
 		devices = (cl_device_id*) malloc(sizeof(cl_device_id));
 		devices[0] = all_devices[0];
 		n_devices = 1;
-		
-		/* Get device info */
+	}
+	
+	/* Show device info */
+	for (i=0;i<n_devices;i++) {
 		char device_name[INFO_STR_SIZE];
-		clGetDeviceInfo(devices[0], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
+		clGetDeviceInfo(devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, device_name, NULL);
 		if (err != CL_SUCCESS)
 			ocl_fatal(err, "clGetDeviceInfo failed");
 		
 		printf("Device %d selected: %s\n", 1, device_name);
+		
 		if (action_list_exts) {
 			char exts[INFO_STR_SIZE];
-			clGetDeviceInfo(devices[0], CL_DEVICE_EXTENSIONS, INFO_STR_SIZE, exts, NULL);
+			clGetDeviceInfo(devices[i], CL_DEVICE_EXTENSIONS, INFO_STR_SIZE, exts, NULL);
 			if (err != CL_SUCCESS)
 				ocl_fatal(err, "clGetDeviceInfo failed");
 			printf("Extensions: %s\n", exts);
 		}
+		
+		if (opencl_api_version >= 12) {
+			char *s;
+			size_t size;
+			
+			clGetDeviceInfo(devices[i], CL_DEVICE_BUILT_IN_KERNELS, 0, 0, &size);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetDeviceInfo failed");
+			if (size > 1) {
+				s = (char*) malloc(size);
+				clGetDeviceInfo(devices[i], CL_DEVICE_BUILT_IN_KERNELS, size, s, NULL);
+				if (err != CL_SUCCESS)
+					ocl_fatal(err, "clGetDeviceInfo failed");
+				
+				printf("Built-in kernels: %s\n", s);
+				
+				free(s);
+			}
+		}
+		
 	}
 	
 	/* List available devices */

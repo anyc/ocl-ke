@@ -26,9 +26,9 @@ Options:
         -b <build_opts> Build options that are passed to the compiler
         -B <link_opts>  Options passed to the linker
         -s              Create a kernel library instead of an executable
-        -i <source>     Include this source file (OpenCL 1.2 only)
+        -i <source>     Include this source file (OpenCL 1.2 or higher only)
                         This option can be specified multiple times.
-        -I <binary>     Include this binary file (OpenCL 1.2 only)
+        -I <binary>     Include this binary file (OpenCL 1.2 or higher only)
                         This option can be specified multiple times.
         -o <filename>   Write kernel into this file instead of ${kernel}.bin
 ```
@@ -52,19 +52,20 @@ Compile a kernel for the second device on the third platform and store the resul
 
 `ocl-ke -p 3 -d 2 mykernel.cl -o mykernel_2nd_device.bin`
 
-Compile `mykernel.cl` and include `myinclude.h.cl` (OpenCL v1.2 and higher only):
-
-`ocl-ke -i myinclude.h.cl mykernel.cl`
-
 Compile `mykernel.cl` and use current directory to look for include files:
 
 `ocl-ke -b "-I ./" mykernel.cl`
 
-Create a kernel library `library.bin` from uncompiled `mykernel1.cl` and precompiled `mykernel2.bin` for the first device on the first platform:
+Compile `mykernel.cl` and include `myinclude.h.cl` (OpenCL v1.2 and higher only):
+
+`ocl-ke -i myinclude.h.cl mykernel.cl`
+
+Create a kernel library `library.bin` from uncompiled `mykernel1.cl` and precompiled `mykernel2.bin` for the
+first device on the first platform (OpenCL v1.2 and higher only):
 
 `ocl-ke -i mykernel1.cl -I mykernel2.bin -s -o library.bin`
 
-Show information about compiled kernels:
+Show information about binary files and included kernels for the default platform and device:
 
 ```
 # ocl-ke -I library.bin
