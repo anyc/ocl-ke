@@ -83,7 +83,7 @@ static char *syntax =
 	"\t                available operations. \n"
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	"\t-B <link_opts>  Options passed to the linker\n"
-	"\t-s              Create an OpenCL library instead of an executable\n"
+	"\t-s              Create a kernel library instead of an executable\n"
 	"\t-i <source>     Include this source file (OpenCL 1.2 only)\n"
 	"\t                This option can be specified multiple times.\n"
 	"\t-I <binary>     Include this binary file (OpenCL 1.2 only)\n"
@@ -766,7 +766,7 @@ int main(int argc, char **argv)
 			for (i=0,j=0;i<n_includes;i++,j++)
 				link_programs[j] = input_headers[i];
 			
-			for (i=0,j=0;i<n_bin_includes;i++,j++)
+			for (i=0;i<n_bin_includes;i++,j++)
 				link_programs[j] = bin_input_headers[i];
 			
 			if (kernel_file_name)
