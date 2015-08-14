@@ -2,7 +2,7 @@
 LDLIBS+=-lOpenCL
 CFLAGS+=-g
 
-TESTS:=$(wildcard *.c) add_ocl10.c add_ocl12.c
+TESTS:=$(wildcard *.c) add_ocl10.c add_ocl12.c add_lib.c
 KERNELS:=$(filter-out %.inc.cl,$(wildcard *.cl))
 
 .PHONY: clean
@@ -19,6 +19,9 @@ KERNELS:=$(filter-out %.inc.cl,$(wildcard *.cl))
 	../ocl-ke $*.h.cl -o $*.h.bin
 	../ocl-ke $< -I $*.h.bin -o $@
 
+library.bin: add_kernel.ocl12.bin increment_kernel.bin
+	../ocl-ke -I add_kernel.ocl12.bin -I increment_kernel.bin -s -o $@
+
 %.test: %
 	@echo Running $<...
 	@./$<
@@ -31,6 +34,10 @@ add_ocl10.o: increment.c add_kernel.ocl10.bin
 
 add_ocl12.o: CFLAGS+=-DKERNEL_NAME=add -DKERNEL_FILE=add_kernel.ocl12.bin
 add_ocl12.o: increment.c add_kernel.ocl12.bin
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
+add_lib.o: CFLAGS+=-DKERNEL_NAME=add -DKERNEL_FILE=library.bin
+add_lib.o: increment.c library.bin
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
 clean:
