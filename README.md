@@ -4,10 +4,10 @@ ocl-ke (OpenCL kernel extractor)
 ```
 Syntax: ocl-ke [<options>] <kernel.cl>
 
-ocl-ke uses the OpenCL API to compile a kernel for the selected device(s)
+ocl-ke uses the OpenCL API to compile OpenCL code for the selected devices
 and stores the resulting binary code in a file. Afterwards, applications
-can load the kernel with clCreateProgramWithBinary instead of compiling
-the kernel during every application run.
+can load the kernels with clCreateProgramWithBinary instead of compiling
+the kernels during every application run.
 
 Options:
         -L              Print list of available platforms
@@ -32,7 +32,11 @@ Options:
                         This option can be specified multiple times.
         -I <binary>     Include this binary file (OpenCL 1.2 or higher only)
                         This option can be specified multiple times.
-        -o <filename>   Write kernel into this file instead of ${kernel}.bin
+        -o <filename>   Write binary code into this file instead of ${source}.bin
+        -O              Write binary code into ${source}_${device name}.bin
+                        Special characters in the device name will be replaced by
+                        underscore. This option is enabled by default if multiple
+                        devices are selected.
 ```
 
 Like regular OpenCL applications, ocl-ke calls the `clCreateProgramWithSource` function to compile the OpenCL kernel source code in the given file but queries the OpenCL vendor implementation for the resulting binary code using `clGetProgramInfo` afterwards and stores it into a separate file. Consequetnly, an application can use `clCreateProgramWithBinary` to avoid compiling the kernel code during every application run. Hence, it acts as an offline compiler for OpenCL kernels but contains no compiler functionality itself and depends completely on the provided OpenCL vendor libraries.

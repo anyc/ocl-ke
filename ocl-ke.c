@@ -67,12 +67,12 @@ unsigned char opencl_api_version = 10;
 #endif
 
 static char *syntax =
-	"Syntax: %s [<options>] <kernel.cl>\n"
+	"Syntax: %s [<options>] <source.cl>\n"
 	"\n"
-	"%s uses the OpenCL API to compile a kernel for the selected device(s)\n"
+	"%s uses the OpenCL API to compile OpenCL code for the selected devices\n"
 	"and stores the resulting binary code in a file. Afterwards, applications\n"
-	"can load the kernel with clCreateProgramWithBinary instead of compiling\n"
-	"the kernel during every application run.\n"
+	"can load the kernels with clCreateProgramWithBinary instead of compiling\n"
+	"the kernels during every application run.\n"
 	"\n"
 	"Options:\n"
 	"\t-L              Print list of available platforms\n"
@@ -97,7 +97,11 @@ static char *syntax =
 	"\t                This option can be specified multiple times.\n"
 	"\t-I <binary>     Include this binary file (OpenCL 1.2 or higher only)\n"
 	"\t                This option can be specified multiple times.\n"
-	"\t-o <filename>   Write kernel into this file instead of ${kernel}.bin\n"
+	"\t-o <filename>   Write binary code into this file instead of ${source}.bin\n"
+	"\t-O              Write binary code into ${source}_${device name}.bin\n"
+	"\t                Special characters in the device name will be replaced by\n"
+	"\t                underscore. This option is enabled by default if multiple\n"
+	"\t                devices are selected.\n"
 	;
 
 char * ocl_err2str(cl_int err) {
@@ -365,6 +369,7 @@ int main(int argc, char **argv)
 	int use_amd_extension = 0;
 	char make_shared_lib = 0;
 	char detailed_kernels = 0;
+	char include_dev_name = 0;
 	
 	cl_int err;
 	cl_uint n_platforms;
@@ -405,7 +410,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Process options */
-	while ((opt = getopt(argc, argv, "lLeap:d:b:o:i:I:sB:k")) != -1) {
+	while ((opt = getopt(argc, argv, "lLeap:d:b:o:Oi:I:sB:k")) != -1) {
 		switch (opt) {
 		case 'l':
 			action_list_devices = 1;
@@ -421,6 +426,9 @@ int main(int argc, char **argv)
 			break;
 		case 'k':
 			detailed_kernels = 1;
+			break;
+		case 'O':
+			include_dev_name = 1;
 			break;
 		case 'p':
 			platform_str = optarg;
@@ -971,7 +979,7 @@ int main(int argc, char **argv)
 			ocl_fatal(err, "clGetProgramInfo CL_PROGRAM_BINARIES failed: %d", err);
 		assert(bin_sizes_ret == sizeof(char*)*n_devices);
 		
-		if (n_devices == 1) {
+		if (n_devices == 1 && !include_dev_name) {
 			// write one file
 			
 			if (!filename) {
@@ -1010,8 +1018,14 @@ int main(int argc, char **argv)
 				name_len = strlen(name);
 				
 				for (j=0;j<name_len;j++)
-					if (name[j] == ' ')
-						name[j] = '_';
+					switch (name[j]) {
+						case ' ':
+						case '(':
+						case ')':
+						case '[':
+						case ']':
+							name[j] = '_';
+					}
 				
 				if (!filename)
 					filename = kernel_file_name;
