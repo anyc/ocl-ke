@@ -17,6 +17,7 @@ Options:
                         available, to choose from the list of all supported
                         devices by the compiler instead of only the available
                         devices in the current system.
+        -k              Show detailed information about included kernels
         -p <plat_idx>   Index of the desired platform (default: 1)
         -d <dev_idx>    Index of the desired device (default: 1)
                         A value of 0 equals all devices on the platform.
@@ -26,6 +27,7 @@ Options:
         -b <build_opts> Build options that are passed to the compiler
         -B <link_opts>  Options passed to the linker
         -s              Create a kernel library instead of an executable
+                        (OpenCL 1.2 or higher only)
         -i <source>     Include this source file (OpenCL 1.2 or higher only)
                         This option can be specified multiple times.
         -I <binary>     Include this binary file (OpenCL 1.2 or higher only)
@@ -68,6 +70,8 @@ first device on the first platform (OpenCL v1.2 and higher only):
 Show information about binary files and included kernels for the default platform and device:
 
 ```
-# ocl-ke -I library.bin
-Loading 'library.bin'... build_options="" bin_type="library" n_kernels=2 kernels="mykernel1;mykernel2" 
+# ocl-ke -I library.bin -k
+Loading 'library.bin'... build_options="" bin_type="library" n_kernels=2 kernels="mykernel1;mykernel2"
+        kernel mykernel1(__global int* a, __global int* b, int c)
+        kernel mykernel2(__global int* c, __global int* d, int e)
 ```

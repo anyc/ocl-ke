@@ -51,6 +51,13 @@ cl_program (*l_clLinkProgram)(cl_context context,
 					void *user_data,
 					cl_int *errcode_ret) = 0;
 
+cl_int (*l_clGetKernelArgInfo)(cl_kernel kernel,
+					cl_uint arg_indx,
+					cl_kernel_arg_info param_name,
+					size_t param_value_size,
+					void *param_value,
+					size_t *param_value_size_ret) = 0;
+
 unsigned char opencl_api_version = 10;
 
 #define INFO_STR_SIZE 1000
@@ -75,6 +82,7 @@ static char *syntax =
 	"\t                available, to choose from the list of all supported\n"
 	"\t                devices by the compiler instead of only the available\n"
 	"\t                devices in the current system.\n"
+	"\t-k              Show detailed information about included kernels\n"
 	"\t-p <plat_idx>   Index of the desired platform (default: 1)\n"
 	"\t-d <dev_idx>    Index of the desired device (default: 1)\n"
 	"\t                A value of 0 equals all devices on the platform.\n"
@@ -84,6 +92,7 @@ static char *syntax =
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	"\t-B <link_opts>  Options passed to the linker\n"
 	"\t-s              Create a kernel library instead of an executable\n"
+	"\t                (OpenCL 1.2 or higher only)\n"
 	"\t-i <source>     Include this source file (OpenCL 1.2 or higher only)\n"
 	"\t                This option can be specified multiple times.\n"
 	"\t-I <binary>     Include this binary file (OpenCL 1.2 or higher only)\n"
@@ -225,6 +234,121 @@ void show_build_log(cl_program program, unsigned int n_devices, cl_device_id *de
 	}
 }
 
+void show_kernel_info(cl_program program) {
+	int i, j;
+	cl_int err;
+	cl_uint n_kernels, n_args;
+	cl_kernel *kernels;
+	size_t size;
+	char *fname, *attrs;
+	
+	err = clCreateKernelsInProgram(program, 0, 0, &n_kernels);
+	if (err != CL_SUCCESS)
+		ocl_fatal(err, "clCreateKernelsInProgram failed");
+	
+	kernels = (cl_kernel*) malloc(n_kernels*sizeof(cl_kernel));
+	
+	clCreateKernelsInProgram(program, n_kernels*sizeof(cl_kernel), kernels, 0);
+	if (err != CL_SUCCESS)
+		ocl_fatal(err, "clCreateKernelsInProgram failed");
+	
+	for (i=0;i<n_kernels;i++) {
+		err = clGetKernelInfo(kernels[i], CL_KERNEL_FUNCTION_NAME, 0, 0, &size);
+		if (err != CL_SUCCESS)
+			ocl_fatal(err, "clGetKernelInfo failed");
+		fname = (char*) malloc(size);
+		err = clGetKernelInfo(kernels[i], CL_KERNEL_FUNCTION_NAME, size, fname, 0);
+		if (err != CL_SUCCESS)
+			ocl_fatal(err, "clGetKernelInfo failed");
+		
+		err = clGetKernelInfo(kernels[i], CL_KERNEL_NUM_ARGS, sizeof(cl_uint), &n_args, 0);
+		if (err != CL_SUCCESS)
+			ocl_fatal(err, "clGetKernelInfo failed");
+		
+		err = clGetKernelInfo(kernels[i], CL_KERNEL_ATTRIBUTES, 0, 0, &size);
+		if (err != CL_SUCCESS)
+			ocl_fatal(err, "clGetKernelInfo failed");
+		attrs = (char*) malloc(size);
+		err = clGetKernelInfo(kernels[i], CL_KERNEL_ATTRIBUTES, size, attrs, 0);
+		if (err != CL_SUCCESS)
+			ocl_fatal(err, "clGetKernelInfo failed");
+		
+		printf("\tkernel %s %s(", attrs, fname);
+		
+		for (j=0;j<n_args;j++) {
+			char *argtype, *argname;
+			cl_kernel_arg_address_qualifier addr_qual;
+			cl_kernel_arg_access_qualifier acc_qual;
+			cl_kernel_arg_type_qualifier type_qual;
+			
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_TYPE_NAME, 0, 0, &size);
+			// skip this loop if program does not contain information about kernel arguments
+			if (err == CL_KERNEL_ARG_INFO_NOT_AVAILABLE)
+				break;
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			argtype = (char*) malloc(size);
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_TYPE_NAME, size, argtype, 0);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_NAME, 0, 0, &size);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			argname = (char*) malloc(size);
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_NAME, size, argname, 0);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_ADDRESS_QUALIFIER, sizeof(cl_kernel_arg_address_qualifier), &addr_qual, 0);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			
+			switch (addr_qual) {
+				case CL_KERNEL_ARG_ADDRESS_GLOBAL: printf("__global "); break;
+				case CL_KERNEL_ARG_ADDRESS_LOCAL: printf("__local "); break;
+				case CL_KERNEL_ARG_ADDRESS_CONSTANT: printf("__constant "); break;
+				case CL_KERNEL_ARG_ADDRESS_PRIVATE: /* printf("__private "); */ break;
+			}
+			
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_ACCESS_QUALIFIER, sizeof(cl_kernel_arg_access_qualifier), &acc_qual, 0);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			
+			switch (acc_qual) {
+				case CL_KERNEL_ARG_ACCESS_READ_ONLY: printf("__read_only "); break;
+				case CL_KERNEL_ARG_ACCESS_WRITE_ONLY: printf("__write_only "); break;
+				case CL_KERNEL_ARG_ACCESS_READ_WRITE: printf("__read_write "); break;
+				case CL_KERNEL_ARG_ACCESS_NONE: /* printf("__private "); */ break;
+			}
+			
+			err = l_clGetKernelArgInfo(kernels[i], j, CL_KERNEL_ARG_TYPE_QUALIFIER, sizeof(cl_kernel_arg_type_qualifier), &type_qual, 0);
+			if (err != CL_SUCCESS)
+				ocl_fatal(err, "clGetKernelInfo failed");
+			
+			switch (type_qual) {
+				case CL_KERNEL_ARG_TYPE_CONST: printf("const "); break;
+				case CL_KERNEL_ARG_TYPE_RESTRICT: printf("restrict "); break;
+				case CL_KERNEL_ARG_TYPE_VOLATILE: printf("volatile "); break;
+				case  CL_KERNEL_ARG_TYPE_NONE: /* printf("__private "); */ break;
+			}
+			
+			printf("%s %s", argtype, argname);
+			
+			if (j < n_args-1)
+				printf(", ");
+			
+			free(argtype);
+			free(argname);
+		}
+		
+		printf(")\n");
+		
+		free(fname);
+		free(attrs);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int opt;
@@ -240,6 +364,7 @@ int main(int argc, char **argv)
 	int action_list_exts = 0;
 	int use_amd_extension = 0;
 	char make_shared_lib = 0;
+	char detailed_kernels = 0;
 	
 	cl_int err;
 	cl_uint n_platforms;
@@ -266,7 +391,8 @@ int main(int argc, char **argv)
 	/* check if the linked OpenCL runtime supports v1.2 API */
 	l_clCompileProgram = dlsym(0, "clCompileProgram");
 	l_clLinkProgram = dlsym(0, "clLinkProgram");
-	if (l_clCompileProgram && l_clLinkProgram) {
+	l_clGetKernelArgInfo = dlsym(0, "clGetKernelArgInfo");
+	if (l_clCompileProgram && l_clLinkProgram && l_clGetKernelArgInfo) {
 		opencl_api_version = 12;
 		printf("Linked OpenCL runtime seems to support v1.2 API\n");
 	}
@@ -279,7 +405,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Process options */
-	while ((opt = getopt(argc, argv, "lLeap:d:b:o:i:I:sB:")) != -1) {
+	while ((opt = getopt(argc, argv, "lLeap:d:b:o:i:I:sB:k")) != -1) {
 		switch (opt) {
 		case 'l':
 			action_list_devices = 1;
@@ -292,6 +418,9 @@ int main(int argc, char **argv)
 			break;
 		case 'e':
 			action_list_exts = 1;
+			break;
+		case 'k':
+			detailed_kernels = 1;
 			break;
 		case 'p':
 			platform_str = optarg;
@@ -332,6 +461,8 @@ int main(int argc, char **argv)
 			
 			break;
 		case 's':
+			if (opencl_api_version < 12)
+				fatal("OpenCL >=v1.2 required to create shared libraries");
 			make_shared_lib = 1;
 			break;
 		case 'B':
@@ -677,6 +808,12 @@ int main(int argc, char **argv)
 				printf("kernels=\"%s\" ", src);
 				free(src);
 				
+				// only show detailed info after link
+				if (detailed_kernels) {
+					printf("\n");
+					show_kernel_info(program);
+				}
+				
 				if (opencl_api_version >= 12)
 					clReleaseProgram(program);
 			}
@@ -753,6 +890,12 @@ int main(int argc, char **argv)
 					show_build_log(src_prog, n_devices, devices, err);
 			} else
 				fatal("failed to detect OpenCL API version");
+			
+			if (detailed_kernels) {
+				cl_program kinfo;
+				kinfo = l_clLinkProgram(context, n_devices, devices, link_options, 1, &src_prog, 0, 0, &err);
+				show_kernel_info(kinfo);
+			}
 		}
 	}
 	

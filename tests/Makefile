@@ -16,8 +16,7 @@ KERNELS:=$(filter-out %.inc.cl,$(wildcard *.cl))
 	../ocl-ke $< -b "-I$(shell pwd)" -o $@
 
 %.ocl12.bin: %.inc.cl %.h.cl
-	../ocl-ke $*.h.cl -o $*.h.bin
-	../ocl-ke $< -I $*.h.bin -o $@
+	../ocl-ke $< -i $*.h.cl -o $@
 
 library.bin: add_kernel.ocl12.bin increment_kernel.bin
 	../ocl-ke -I add_kernel.ocl12.bin -I increment_kernel.bin -s -o $@
