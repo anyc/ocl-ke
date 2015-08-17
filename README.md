@@ -26,7 +26,7 @@ Options:
                         available operations. 
         -b <build_opts> Build options that are passed to the compiler
         -B <link_opts>  Options passed to the linker
-        -s              Create a kernel library instead of an executable
+        -s              Create a kernel library instead of kernel executables
                         (OpenCL 1.2 or higher only)
         -i <source>     Include this source file (OpenCL 1.2 or higher only)
                         This option can be specified multiple times.
@@ -39,11 +39,9 @@ Options:
                         devices are selected.
 ```
 
-Like regular OpenCL applications, ocl-ke calls the `clCreateProgramWithSource` function to compile the OpenCL kernel source code in the given file but queries the OpenCL vendor implementation for the resulting binary code using `clGetProgramInfo` afterwards and stores it into a separate file. Consequetnly, an application can use `clCreateProgramWithBinary` to avoid compiling the kernel code during every application run. Hence, it acts as an offline compiler for OpenCL kernels but contains no compiler functionality itself and depends completely on the provided OpenCL vendor libraries.
+Like regular OpenCL applications, ocl-ke calls the `clCreateProgramWithSource` function to compile the OpenCL kernel source code in the given file but queries the OpenCL vendor implementation for the resulting binary code using `clGetProgramInfo` afterwards and stores it into a separate file. Consequently, an application can use `clCreateProgramWithBinary` to avoid compiling the kernel code during every application run. Hence, it acts as an offline compiler for OpenCL kernels but contains no compiler functionality itself and depends completely on the provided OpenCL vendor libraries.
 
 Please note, the resulting file may contain actual hardware instructions for the specific device or just another intermediate representation. The actual behavior is implementation-specific and not regulated by the OpenCL specification. Hence, using cached kernels may only partially reduce the initialization overhead for an application.
-
-If you want to use multiple OpenCL libraries in parallel, please see the documentation of the [OpenCL ICD extension](https://www.khronos.org/registry/cl/extensions/khr/cl_khr_icd.txt).
 
 The ocl-ke code is based on the m2s-opencl-kc tool from [multi2sim simulator](https://www.multi2sim.org/) v3.0.3 that was written by Rafael Ubal Tena and released under the GPLv3 license.
 

@@ -91,7 +91,7 @@ static char *syntax =
 	"\t                available operations. \n"
 	"\t-b <build_opts> Build options that are passed to the compiler\n"
 	"\t-B <link_opts>  Options passed to the linker\n"
-	"\t-s              Create a kernel library instead of an executable\n"
+	"\t-s              Create a kernel library instead of kernel executables\n"
 	"\t                (OpenCL 1.2 or higher only)\n"
 	"\t-i <source>     Include this source file (OpenCL 1.2 or higher only)\n"
 	"\t                This option can be specified multiple times.\n"
@@ -571,7 +571,7 @@ int main(int argc, char **argv)
 		if (err != CL_SUCCESS)
 			ocl_fatal(err, "error while querying platform info");
 		
-		printf("Extensions: %s\n", exts);
+		printf("Platform extensions: %s\n", exts);
 	}
 	
 	/* query OpenCL version of chosen platform */
@@ -587,6 +587,8 @@ int main(int argc, char **argv)
 	printf("Platform supports OpenCL v%.1f\n", cl_version);
 	opencl_api_version = cl_version * 10;
 	
+	if (make_shared_lib && opencl_api_version < 12)
+		fatal("OpenCL version of platform too old to create libraries (%.1f < 1.2)", opencl_api_version/10.0);
 	
 	/* create context */
 	cl_context_properties cprops[5];
@@ -676,12 +678,16 @@ int main(int argc, char **argv)
 			clGetDeviceInfo(devices[i], CL_DEVICE_EXTENSIONS, INFO_STR_SIZE, exts, NULL);
 			if (err != CL_SUCCESS)
 				ocl_fatal(err, "clGetDeviceInfo failed");
-			printf("Extensions: %s\n", exts);
+			printf("Device extensions: %s\n", exts);
 		}
 		
 		if (opencl_api_version >= 12) {
 			char *s;
 			size_t size;
+			
+			// BUG: AMD's OpenCL lib (1113.2) segfaults while querying built-in kernels if this extension is enabled
+			if (use_amd_extension)
+				continue;
 			
 			clGetDeviceInfo(devices[i], CL_DEVICE_BUILT_IN_KERNELS, 0, 0, &size);
 			if (err != CL_SUCCESS)
@@ -712,7 +718,7 @@ int main(int argc, char **argv)
 		for (i = 0; i < n_all_devices; i++) {
 			clGetDeviceInfo(all_devices[i], CL_DEVICE_NAME, INFO_STR_SIZE, name, NULL);
 			clGetDeviceInfo(all_devices[i], CL_DEVICE_VENDOR, INFO_STR_SIZE, vendor, NULL);
-			fprintf(f, " %2d    %s %s\n", i+1, name, vendor);
+			fprintf(f, " %2d    %s, %s\n", i+1, name, vendor);
 		}
 		fprintf(f, "----------------------------------------------------------\n");
 		fprintf(f, "\t%d devices available\n\n", n_all_devices);
@@ -912,7 +918,6 @@ int main(int argc, char **argv)
 		char *final_link_options;
 		cl_program *link_programs;
 		size_t n_links, i,j;
-		
 		
 		if (!filename && !kernel_file_name)
 			fatal("Please specify a library file name\n");
